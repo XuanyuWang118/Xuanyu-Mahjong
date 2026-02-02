@@ -1,0 +1,5 @@
+{
+  "name": "Xuanyu Mahjong",
+  "description": "A smart Chinese Mahjong simulator (Standard 136-tile rules) with real-time AI strategy analysis powered by Gemini 3 Flash.",
+  "requestFramePermissions": []
+}
