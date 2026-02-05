@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { Player, Tile } from '../types';
 import MahjongTile from './MahjongTile';
-import { Diamond } from 'lucide-react';
+import { Diamond, Crosshair, Bomb, MoveDown } from 'lucide-react';
 
 interface PlayerAreaProps {
   player: Player;
@@ -9,9 +10,17 @@ interface PlayerAreaProps {
   revealHand?: boolean;
   isWinner?: boolean;
   winningTile?: Tile | null;
+  
+  // 新增 props
+  isTargetable?: boolean;
+  onTargetClick?: () => void;
+  damageState?: 'crater' | 'arrows' | null;
 }
 
-const PlayerArea: React.FC<PlayerAreaProps> = ({ player, isActive, revealHand = false, isWinner = false, winningTile = null }) => {
+const PlayerArea: React.FC<PlayerAreaProps> = ({ 
+    player, isActive, revealHand = false, isWinner = false, winningTile = null,
+    isTargetable = false, onTargetClick, damageState = null
+}) => {
   const isHorizontal = player.position === 'left' || player.position === 'right';
   const isTop = player.position === 'top';
 
@@ -36,9 +45,22 @@ const PlayerArea: React.FC<PlayerAreaProps> = ({ player, isActive, revealHand = 
     bottom: ''
   }[player.position];
 
+  // 技能目标选择时的样式
+  const targetStyle = isTargetable 
+    ? "cursor-pointer ring-4 ring-red-500 ring-offset-4 ring-offset-black animate-pulse hover:bg-red-900/30 rounded-3xl" 
+    : "";
+
   return (
-    <div className={`flex ${containerClass} relative p-4 transition-all duration-300 ${isActive && !revealHand ? 'opacity-100 scale-105' : 'opacity-80'} ${isWinner ? 'ring-4 ring-yellow-400 rounded-xl shadow-lg' : ''}`}>
+    <div 
+        onClick={() => isTargetable && onTargetClick && onTargetClick()}
+        className={`flex ${containerClass} relative p-4 transition-all duration-300 
+            ${isActive && !revealHand ? 'opacity-100 scale-105' : 'opacity-80'} 
+            ${isWinner ? 'ring-4 ring-yellow-400 rounded-xl shadow-lg' : ''}
+            ${targetStyle}
+        `}
+    >
       
+      {/* 玩家信息牌 */}
       <div 
         data-debug-id={`player-info-${player.position}`}
         className={`absolute 
@@ -53,9 +75,11 @@ const PlayerArea: React.FC<PlayerAreaProps> = ({ player, isActive, revealHand = 
         </div>
         {isActive && !revealHand && <div className="mt-1 w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>}
         {isWinner && <span className="text-[10px] text-yellow-400 font-black border border-yellow-400 px-1 rounded">WIN</span>}
+        {isTargetable && <div className="absolute -top-6 animate-bounce text-red-500 font-bold"><Crosshair size={24}/></div>}
       </div>
 
-      <div className="flex gap-4 items-center">
+      {/* 手牌与吃碰杠区域 */}
+      <div className="flex gap-4 items-center relative">
         <div data-debug-id={`player-hand-${player.position}`} className={handClass}>
           {player.hand.map((tile) => (
             <MahjongTile 
@@ -86,6 +110,25 @@ const PlayerArea: React.FC<PlayerAreaProps> = ({ player, isActive, revealHand = 
           </div>
         )}
       </div>
+
+      {/* 箭矢伤害视觉 */}
+      {damageState === 'arrows' && (
+          <div className="absolute inset-0 z-30 pointer-events-none overflow-visible">
+              {[...Array(20)].map((_, i) => (
+                  <MoveDown 
+                    key={i} 
+                    className="absolute text-black drop-shadow-md opacity-90" 
+                    size={48}
+                    style={{
+                        top: `${Math.random() * 80 + 10}%`,
+                        left: `${Math.random() * 90 + 5}%`,
+                        transform: `rotate(${Math.random() * 30 - 15}deg) scaleY(2)`
+                    }}
+                  />
+              ))}
+          </div>
+      )}
+
     </div>
   );
 };

@@ -1,3 +1,4 @@
+
 export type Suit = 'man' | 'pin' | 'sou' | 'wind' | 'dragon';
 
 export interface Tile {
@@ -46,6 +47,7 @@ export interface HuResult {
   huType: 'ron' | 'tsumo' | 'draw' | null;
   winningTile: Tile | null;
   winnerId: number | null;
+  dealerMultiplier?: number;
 }
 
 export interface AIAnalysisResult {
@@ -72,8 +74,8 @@ export interface GameState {
   lastDiscarderIndex: number;
   waitingForUserAction: boolean;
   dealerId: number;
-  roundNumber: number; // 0-3 for East, 4-7 for South etc.
-  honbaNumber: number; // 连庄次数
+  roundNumber: number;
+  honbaNumber: number;
 }
 
 export interface ActionOptions {
@@ -88,6 +90,11 @@ export interface GameSettings {
   baseFanValue: number;
   playerInitialGold: number;
   botDifficulty: BotDifficulty;
+  playerInitialDiamonds: number; 
+  diamondRewardPerGame: number;
+  backgroundImageUrl?: string; // 新增：自定义背景
+  botNames: { top: string; left: string; right: string }; // 新增：自定义机器人名称
+  volume: number; // 新增：音量 (0-100)
 }
 
 export interface PlayerHistory {
@@ -96,4 +103,47 @@ export interface PlayerHistory {
   maxFanWin: number;
   maxFanHand: Tile[] | null;
   suggestions: string[];
+}
+
+// --- 新增技能相关类型 ---
+
+export type SkillType = 'check_hand' | 'exchange_tile' | 'fireball' | 'arrow_volley';
+
+export interface Skill {
+  id: SkillType;
+  name: string;
+  cost: number;
+  description: string;
+  isTargeted: boolean; 
+}
+
+export interface ActiveSkillState {
+  skillId: SkillType;
+  step: 'selecting_target' | 'executing';
+}
+
+export interface SkillVisualEffect {
+  id: string;
+  type: SkillType;
+  sourceId: number;
+  targetId?: number; 
+  timestamp: number;
+}
+
+// --- 新增账户系统类型 ---
+export interface UserProfile {
+  username: string;
+  password: string; // 简单明文存储演示用
+  gold: number;
+  diamonds: number;
+  history: PlayerHistory;
+  settings: GameSettings;
+  nickname: string; // 显示名称，可修改
+}
+
+// --- 新增听牌提示类型 ---
+export interface WinningTileHint {
+  tile: Tile;
+  fan: number;
+  countLeft: number;
 }

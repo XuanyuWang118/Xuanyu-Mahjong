@@ -1,10 +1,12 @@
+
 import React from 'react';
 
 interface TileCounterProps {
   counts: Record<string, number>;
+  className?: string;
 }
 
-const TileCounter: React.FC<TileCounterProps> = ({ counts }) => {
+const TileCounter: React.FC<TileCounterProps> = ({ counts, className = '' }) => {
   const renderRow = (label: string, symbols: string[], colorClass: string) => (
     <div className="mb-2">
       <div className="flex flex-wrap gap-1">
@@ -33,8 +35,8 @@ const TileCounter: React.FC<TileCounterProps> = ({ counts }) => {
   const sous = Array.from({length: 9}, (_, i) => `${i+1}条`);
 
   return (
-    <div className="bg-gray-900/90 text-white p-3 rounded-xl border border-gray-700 w-full shadow-2xl backdrop-blur-md">
-      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-700 pb-1">
+    <div className={`text-white p-3 rounded-xl border border-white/10 w-full shadow-lg backdrop-blur-sm ${className || 'bg-gray-900/90 border-gray-700'}`}>
+      <h3 className="text-xs font-bold text-gray-200 uppercase tracking-widest mb-3 border-b border-white/10 pb-1">
         牌堆计数 (实时)
       </h3>
       {renderRow('萬子', mans, 'text-red-400')}

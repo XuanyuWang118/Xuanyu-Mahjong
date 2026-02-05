@@ -1,7 +1,6 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { AIAnalysisResult, Player, Tile } from "../types";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Helper to get suit suffix (duplicated from utils.ts for independent service, consider shared helper)
 const getSuitSymbolSuffix = (suit: string): string => {
@@ -17,6 +16,8 @@ export const getMahjongStrategy = async (
   allMelds: Tile[], 
   roundWind: string
 ): Promise<AIAnalysisResult> => {
+  // 在函数内部初始化以确保使用最新的 API 密钥（例如来自对话框的更新）。
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const handStr = playerHand.map(t => `${t.value}${getSuitSymbolSuffix(t.suit)}`).join(', '); // Use Chinese suffix
   const discardStr = allDiscards.map(t => t.symbol).join(', '); // Already Chinese symbols
@@ -46,7 +47,8 @@ export const getMahjongStrategy = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      // 雀局策略属于复杂推理任务，因此使用 gemini-3-pro-preview。
+      model: "gemini-3-pro-preview",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
