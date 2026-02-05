@@ -3,6 +3,7 @@ import React from 'react';
 import { Player, Tile, HuResult } from '../types';
 import MahjongTile from './MahjongTile';
 import { Trophy, ArrowRightCircle, Star } from 'lucide-react';
+import { sortHand } from '../utils'; // 引入排序工具
 
 interface EndGameModalProps {
   summary: {
@@ -91,6 +92,9 @@ const EndGameModal: React.FC<EndGameModalProps> = ({ summary, onRestartGame }) =
         <div className="space-y-6 mb-10">
           {allPlayersHands.map(player => {
             const goldChange = playerGoldChanges.find(gc => gc.id === player.id)?.change || 0;
+            // 关键修改：对显示的手牌进行排序，这样最后一张摸到的/胡的牌会归位
+            const sortedHand = sortHand([...player.hand]);
+            
             return (
               <div key={player.id} className={`p-6 rounded-3xl border ${player.id === winnerId ? 'bg-yellow-600/10 border-yellow-500/50 scale-[1.02]' : 'bg-white/5 border-white/5 opacity-80'}`}>
                 <div className="flex justify-between items-center mb-4">
@@ -101,7 +105,18 @@ const EndGameModal: React.FC<EndGameModalProps> = ({ summary, onRestartGame }) =
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {player.melds.map((m, i) => <div key={i} className="flex gap-0.5 bg-black/40 p-2 rounded-2xl border border-white/5">{m.tiles.map((t, ti) => <MahjongTile key={t.id} tile={t} size="md" hidden={m.type === 'angang' && (ti === 0 || ti === 3)} />)}</div>)}
-                  <div className="flex gap-1 ml-4">{player.hand.map(tile => <MahjongTile key={tile.id} tile={tile} size="md" highlight={player.id === winnerId && winningTile?.id === tile.id} />)}</div>
+                  
+                  {/* 使用排序后的手牌进行渲染 */}
+                  <div className="flex gap-1 ml-4">
+                      {sortedHand.map(tile => (
+                          <MahjongTile 
+                            key={tile.id} 
+                            tile={tile} 
+                            size="md" 
+                            highlight={player.id === winnerId && winningTile?.id === tile.id} 
+                          />
+                      ))}
+                  </div>
                 </div>
               </div>
             );

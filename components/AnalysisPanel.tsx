@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { AIAnalysisResult, WinningTileHint } from '../types';
-import { Sparkles, Brain, Move, Target, AlertCircle } from 'lucide-react';
+import { Sparkles, Brain, Move, Target, AlertCircle, Percent, Trophy } from 'lucide-react';
 import MahjongTile from './MahjongTile';
 
 interface AnalysisPanelProps {
@@ -99,6 +99,28 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ analysis, loading, onAnal
                 <div className="text-lg font-bold text-white">
                     {analysis.shanten <= 0 ? <span className="text-red-400 animate-pulse">听牌</span> : `${analysis.shanten}向听`}
                 </div>
+            </div>
+          </div>
+
+          {/* 新增：胜率与番数展示 */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col justify-center items-center">
+               <div className="flex items-center gap-1 mb-1">
+                 <Percent size={10} className="text-green-400"/>
+                 <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">胡牌概率</span>
+               </div>
+               <div className={`text-base font-bold ${analysis.winningProbability >= 60 ? 'text-green-400' : analysis.winningProbability >= 30 ? 'text-yellow-400' : 'text-gray-300'}`}>
+                  {analysis.winningProbability}%
+               </div>
+            </div>
+            <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col justify-center items-center">
+               <div className="flex items-center gap-1 mb-1">
+                 <Trophy size={10} className="text-purple-400"/>
+                 <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">预估番数</span>
+               </div>
+               <div className="text-base font-bold text-purple-400">
+                  {analysis.potentialFan} 番
+               </div>
             </div>
           </div>
 

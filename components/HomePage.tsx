@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { PlayerHistory, UserProfile } from '../types';
-import { Play, Settings, History, MessageSquare, Diamond, User, LogOut, KeyRound } from 'lucide-react';
+import { Play, Settings, History, MessageSquare, Diamond, User, LogOut, KeyRound, Loader2 } from 'lucide-react';
 import MahjongTile from './MahjongTile';
 
 interface HomePageProps {
@@ -10,8 +10,8 @@ interface HomePageProps {
   playerHistory: PlayerHistory;
   playerGold: number;
   currentUser: UserProfile | null;
-  onLogin: (u: string, p: string) => boolean;
-  onRegister: (u: string, p: string) => boolean;
+  onLogin: (u: string, p: string) => Promise<boolean>;
+  onRegister: (u: string, p: string) => Promise<boolean>;
   onLogout: () => void;
 }
 
@@ -24,6 +24,7 @@ const HomePage: React.FC<HomePageProps> = ({
   const [authMode, setAuthMode] = useState<'none' | 'login' | 'register'>('none');
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (playerHistory.suggestions && playerHistory.suggestions.length > 0) {
@@ -38,12 +39,22 @@ const HomePage: React.FC<HomePageProps> = ({
     }
   };
 
-  const handleAuthSubmit = () => {
+  const handleAuthSubmit = async () => {
       if (!usernameInput || !passwordInput) return;
+      setIsLoading(true);
+      
+      let success = false;
       if (authMode === 'login') {
-          if (onLogin(usernameInput, passwordInput)) setAuthMode('none');
+          success = await onLogin(usernameInput, passwordInput);
       } else {
-          if (onRegister(usernameInput, passwordInput)) setAuthMode('none');
+          success = await onRegister(usernameInput, passwordInput);
+      }
+
+      setIsLoading(false);
+      if (success) {
+          setAuthMode('none');
+          setUsernameInput('');
+          setPasswordInput('');
       }
   };
 
@@ -66,14 +77,15 @@ const HomePage: React.FC<HomePageProps> = ({
                   </h2>
                   <div className="space-y-4">
                       <div>
-                          <label className="text-xs text-gray-400 uppercase font-bold">用户名</label>
-                          <input type="text" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-lg p-3 mt-1 focus:border-yellow-500 outline-none text-white" />
+                          <label className="text-xs text-gray-400 uppercase font-bold">用户名 (Email)</label>
+                          <input type="text" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-lg p-3 mt-1 focus:border-yellow-500 outline-none text-white" placeholder="example@email.com" />
                       </div>
                       <div>
                           <label className="text-xs text-gray-400 uppercase font-bold">密码</label>
                           <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-lg p-3 mt-1 focus:border-yellow-500 outline-none text-white" />
                       </div>
-                      <button onClick={handleAuthSubmit} className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 rounded-xl font-bold text-black mt-2">
+                      <button onClick={handleAuthSubmit} disabled={isLoading} className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 rounded-xl font-bold text-black mt-2 flex justify-center items-center gap-2">
+                          {isLoading && <Loader2 className="animate-spin" size={16} />}
                           {authMode === 'login' ? '立即登录' : '注册并登录'}
                       </button>
                       <div className="text-center text-xs text-gray-400 mt-4 cursor-pointer hover:text-white" onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}>

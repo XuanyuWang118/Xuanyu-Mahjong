@@ -2,7 +2,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { generateDeck, INITIAL_HAND_SIZE, STARTING_GOLD, BASE_FAN_VALUE, ROUND_WINDS, STARTING_DIAMONDS, DIAMOND_REWARD_PER_GAME } from './constants';
 import { Player, GameState, Tile, AIAnalysisResult, ActionOptions, Meld, HuResult, BotDifficulty, GameSettings, PlayerHistory, ActiveSkillState, SkillVisualEffect, Skill, UserProfile, WinningTileHint } from './types';
-import { shuffleDeck, sortHand, checkCanPong, checkCanKong, checkCanChow, checkCanHu, calculateTileCounts, getBotDiscard, shouldBotMeld, getLocalMahjongStrategy, calculateHandFans, calculateWinningTiles } from './utils';
+import { shuffleDeck, sortHand, checkCanPong, checkCanKong, checkCanChow, checkCanHu, calculateTileCounts, getBotDiscard, shouldBotMeld, calculateHandFans, calculateWinningTiles } from './utils';
+// 引入新的 AI 服务 (已更名为 deepseekService)
+import { getMahjongStrategy } from './services/deepseekService';
 import MahjongTile from './components/MahjongTile';
 import PlayerArea from './components/PlayerArea';
 import AnalysisPanel from './components/AnalysisPanel';
@@ -18,7 +20,12 @@ import FanDisplayOverlay from './components/FanDisplayOverlay';
 import SkillMenu from './components/SkillMenu';
 import SkillEffectLayer from './components/SkillEffectLayer';
 import PeekSwapModal from './components/PeekSwapModal';
-import { audioService } from './services/audio'; // Import Audio Service
+import { audioService } from './services/audio'; 
+
+// Firebase Imports
+import { auth, db } from './services/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, User } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 import { RefreshCw, Bug, Trophy, Zap, Settings as SettingsIcon, Diamond, History as HistoryIcon, LogOut, Home, AlertTriangle, BrainCircuit, Target } from 'lucide-react';
 
@@ -47,35 +54,33 @@ const windMap: Record<string, string> = { 'E': '東', 'S': '南', 'W': '西', 'N
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'home' | 'game'>('home');
-  const [showSettings, setShowSettings] = useState(false); // 改为状态控制显示，而不是视图切换
-  const [showExitConfirm, setShowExitConfirm] = useState(false); // 退出确认弹窗
+  const [showSettings, setShowSettings] = useState(false); 
+  const [showExitConfirm, setShowExitConfirm] = useState(false); 
 
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [selectedTileIndex, setSelectedTileIndex] = useState<number | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // AbortController ref needed for cancelling AI requests
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
+
   const [gameLog, setGameLog] = useState<string[]>([]);
   const [actionOptions, setActionOptions] = useState<ActionOptions | null>(null);
   const [selfActionOptions, setSelfActionOptions] = useState<SelfActionOption[]>([]);
   const [tileCounts, setTileCounts] = useState<Record<string, number>>({});
   const [interactionEffect, setInteractionEffect] = useState<InteractionEffect | null>(null);
-  const [winningHints, setWinningHints] = useState<WinningTileHint[]>([]); // 听牌提示状态
+  const [winningHints, setWinningHints] = useState<WinningTileHint[]>([]); 
   
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [debugTarget, setDebugTarget] = useState(DEBUG_TARGETS[0].selector);
 
-  // --- 账户系统状态 ---
-  const [users, setUsers] = useState<Record<string, UserProfile>>(() => {
-      try {
-          const savedUsers = localStorage.getItem('mahjong_users_db');
-          return savedUsers ? JSON.parse(savedUsers) : {};
-      } catch { return {}; }
-  });
+  // --- 账户系统状态 (Firebase) ---
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // --- 游戏核心数据 (State) ---
-  // 这些数据作为运行时状态，当 currentUser 存在时，变更会同步回 users 并持久化
-  
   const [diamonds, setDiamonds] = useState<number>(STARTING_DIAMONDS);
   const [playerGold, setPlayerGold] = useState<number>(STARTING_GOLD);
   const [playerHistory, setPlayerHistory] = useState<PlayerHistory>({
@@ -89,7 +94,8 @@ const App: React.FC = () => {
         diamondRewardPerGame: DIAMOND_REWARD_PER_GAME,
         backgroundImageUrl: '',
         botNames: { right: '小熊维尼', top: '哈基米', left: '拉布布' },
-        volume: 50 // 默认音量
+        volume: 50, // 默认音量
+        autoAIAnalysis: false // 默认关闭
   });
 
   // --- Sync Volume ---
@@ -97,70 +103,88 @@ const App: React.FC = () => {
     audioService.setVolume(gameSettings.volume);
   }, [gameSettings.volume]);
 
-  // --- 初始化：加载默认或用户数据 ---
+  // --- Firebase Auth & Data Loading ---
   useEffect(() => {
-    // 每次加载 App 时，先读取“默认/游客”数据
-    // 如果没有登录，使用 localStorage 中的 'mahjong...' key 作为游客数据
-    if (!currentUser) {
-        try {
-            const savedSettings = localStorage.getItem('mahjongGameSettings');
-            if (savedSettings) setGameSettings(JSON.parse(savedSettings));
-            
-            const savedGold = localStorage.getItem('mahjongPlayerGold');
-            if (savedGold) setPlayerGold(JSON.parse(savedGold));
-
-            const savedDiamonds = localStorage.getItem('mahjongDiamonds');
-            if (savedDiamonds) setDiamonds(JSON.parse(savedDiamonds));
-
-            const savedHistory = localStorage.getItem('mahjongPlayerHistory');
-            if (savedHistory) setPlayerHistory(JSON.parse(savedHistory));
-        } catch (e) { console.error("Error loading guest data", e); }
-    }
-  }, []); // Run once on mount
-
-  // --- 持久化逻辑：游客存简单Key，用户存Users DB ---
-
-  // 保存 Users DB
-  useEffect(() => {
-      localStorage.setItem('mahjong_users_db', JSON.stringify(users));
-  }, [users]);
-
-  // 同步运行时数据到当前用户 Profile (如果已登录) 或 游客 Storage
-  const syncDataToStorage = useCallback(() => {
-      if (currentUser) {
-          // 更新 users 对象中的当前用户数据
-          setUsers(prev => ({
-              ...prev,
-              [currentUser.username]: {
-                  ...currentUser, // 保留密码等
-                  gold: playerGold,
-                  diamonds: diamonds,
-                  history: playerHistory,
-                  settings: gameSettings,
-                  nickname: currentUser.nickname // 确保昵称同步
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+          // 关键修复：立即设置为 loading，防止在数据拉取完成前触发 persistence effect 导致数据被默认值覆盖
+          setAuthLoading(true);
+          
+          setFirebaseUser(user);
+          if (user) {
+              // 用户已登录，从 Firestore 获取数据
+              try {
+                  const docRef = doc(db, "users", user.uid);
+                  const docSnap = await getDoc(docRef);
+                  if (docSnap.exists()) {
+                      const data = docSnap.data() as UserProfile;
+                      setCurrentUser(data);
+                      setPlayerGold(data.gold);
+                      setDiamonds(data.diamonds);
+                      setPlayerHistory(data.history);
+                      // 确保从云端加载的设置与当前版本兼容（合并新字段）
+                      setGameSettings(prev => ({ ...prev, ...data.settings }));
+                  } else {
+                      console.warn("User logged in but no Firestore document found.");
+                  }
+              } catch (error) {
+                  console.error("Error fetching user data:", error);
               }
-          }));
-          // 同时更新 currentUser 状态引用，避免 stale
-          setCurrentUser(prev => prev ? ({
-              ...prev,
+          } else {
+              // 用户未登录，加载本地游客数据
+              setCurrentUser(null);
+              try {
+                const savedSettings = localStorage.getItem('mahjongGameSettings');
+                if (savedSettings) {
+                    const parsed = JSON.parse(savedSettings);
+                    // 合并以防止丢失新字段 autoAIAnalysis
+                    setGameSettings(prev => ({ ...prev, ...parsed }));
+                }
+                
+                const savedGold = localStorage.getItem('mahjongPlayerGold');
+                if (savedGold) setPlayerGold(JSON.parse(savedGold));
+
+                const savedDiamonds = localStorage.getItem('mahjongDiamonds');
+                if (savedDiamonds) setDiamonds(JSON.parse(savedDiamonds));
+
+                const savedHistory = localStorage.getItem('mahjongPlayerHistory');
+                if (savedHistory) setPlayerHistory(JSON.parse(savedHistory));
+            } catch (e) { console.error("Error loading guest data", e); }
+          }
+          setAuthLoading(false);
+      });
+      return () => unsubscribe();
+  }, []);
+
+  // --- Data Persistence (Sync to Firestore or LocalStorage) ---
+  useEffect(() => {
+      // 避免初始加载时的不必要写入
+      if (authLoading) return;
+
+      if (firebaseUser) {
+          // 云端同步：保存到 Firestore
+          const userData: UserProfile = {
+              username: firebaseUser.email || 'user',
               gold: playerGold,
               diamonds: diamonds,
               history: playerHistory,
-              settings: gameSettings
-          }) : null);
+              settings: gameSettings,
+              nickname: currentUser?.nickname || firebaseUser.displayName || '玩家'
+          };
+          
+          const docRef = doc(db, "users", firebaseUser.uid);
+          setDoc(docRef, userData, { merge: true }).catch(e => console.error("Save to cloud failed", e));
+          
+          setCurrentUser(userData); // Update local profile state
       } else {
-          // 游客模式：保存到独立 key
+          // 本地同步：保存到 LocalStorage (游客模式)
           localStorage.setItem('mahjongGameSettings', JSON.stringify(gameSettings));
           localStorage.setItem('mahjongPlayerGold', JSON.stringify(playerGold));
           localStorage.setItem('mahjongDiamonds', JSON.stringify(diamonds));
           localStorage.setItem('mahjongPlayerHistory', JSON.stringify(playerHistory));
       }
-  }, [playerGold, diamonds, playerHistory, gameSettings, currentUser?.username]); 
+  }, [playerGold, diamonds, playerHistory, gameSettings, firebaseUser, authLoading]);
 
-  // 当关键数据变化时触发同步
-  useEffect(() => { syncDataToStorage(); }, [playerGold, diamonds, playerHistory, gameSettings]);
-
-  // 实时同步机器人名称到局内 (新增)
+  // 实时同步机器人名称到局内
   useEffect(() => {
     if (gameState) {
       setGameState(prev => {
@@ -175,68 +199,91 @@ const App: React.FC = () => {
     }
   }, [gameSettings.botNames]);
 
-  // --- 账户操作 ---
+  // --- 账户操作 (Firebase) ---
 
-  const handleRegister = (u: string, p: string) => {
-      if (users[u]) { alert('用户名已存在'); return false; }
-      const newUser: UserProfile = {
-          username: u, password: p, nickname: u,
-          gold: STARTING_GOLD, diamonds: STARTING_DIAMONDS,
-          history: { totalWins: 0, totalGoldEarned: 0, maxFanWin: 0, maxFanHand: null, suggestions: [] },
-          settings: {
-              baseFanValue: BASE_FAN_VALUE, playerInitialGold: STARTING_GOLD, botDifficulty: BotDifficulty.HARD,
-              playerInitialDiamonds: STARTING_DIAMONDS, diamondRewardPerGame: DIAMOND_REWARD_PER_GAME,
-              botNames: { right: '小熊维尼', top: '哈基米', left: '拉布布' },
-              volume: 50
-          }
-      };
-      const newUsers = { ...users, [u]: newUser };
-      setUsers(newUsers);
-      handleLogin(u, p, newUsers); 
-      return true;
-  };
-
-  const handleLogin = (u: string, p: string, currentUsersDb = users) => {
-      const user = currentUsersDb[u];
-      if (user && user.password === p) {
-          setCurrentUser(user);
-          // 载入用户数据覆盖当前状态
-          setPlayerGold(user.gold);
-          setDiamonds(user.diamonds);
-          setPlayerHistory(user.history);
-          setGameSettings(user.settings);
-          return true;
-      }
-      alert('用户名或密码错误');
-      return false;
-  };
-
-  const handleLogout = () => {
-      setCurrentUser(null);
-      setPlayerGold(STARTING_GOLD);
-      setDiamonds(STARTING_DIAMONDS);
-      setPlayerHistory({ totalWins: 0, totalGoldEarned: 0, maxFanWin: 0, maxFanHand: null, suggestions: [] });
-      setGameSettings({
-        baseFanValue: BASE_FAN_VALUE, playerInitialGold: STARTING_GOLD, botDifficulty: BotDifficulty.HARD,
-        playerInitialDiamonds: STARTING_DIAMONDS, diamondRewardPerGame: DIAMOND_REWARD_PER_GAME,
-        botNames: { right: '小熊维尼', top: '哈基米', left: '拉布布' },
-        volume: 50
-      });
+  const handleRegister = async (u: string, p: string): Promise<boolean> => {
       try {
-        const savedSettings = localStorage.getItem('mahjongGameSettings');
-        if (savedSettings) setGameSettings(JSON.parse(savedSettings));
-      } catch {}
-      setCurrentView('home');
+          // 1. 创建 Firebase Auth 账号
+          const userCredential = await createUserWithEmailAndPassword(auth, u, p); 
+          const user = userCredential.user;
+          
+          // 2. 初始化默认数据
+          const newUserProfile: UserProfile = {
+            username: u,
+            nickname: u.split('@')[0], 
+            gold: STARTING_GOLD,
+            diamonds: STARTING_DIAMONDS,
+            history: { totalWins: 0, totalGoldEarned: 0, maxFanWin: 0, maxFanHand: null, suggestions: [] },
+            settings: {
+                baseFanValue: BASE_FAN_VALUE, playerInitialGold: STARTING_GOLD, botDifficulty: BotDifficulty.HARD,
+                playerInitialDiamonds: STARTING_DIAMONDS, diamondRewardPerGame: DIAMOND_REWARD_PER_GAME,
+                botNames: { right: '小熊维尼', top: '哈基米', left: '拉布布' },
+                volume: 50,
+                autoAIAnalysis: false // 默认关闭
+            }
+          };
+
+          // 3. 写入 Firestore
+          await setDoc(doc(db, "users", user.uid), newUserProfile);
+          
+          // 4. 更新 State
+          setCurrentUser(newUserProfile);
+          setPlayerGold(newUserProfile.gold);
+          setDiamonds(newUserProfile.diamonds);
+          setPlayerHistory(newUserProfile.history);
+          setGameSettings(newUserProfile.settings);
+          
+          return true;
+      } catch (error: any) {
+          console.error("Registration failed:", error);
+          alert(`注册失败: ${error.message}`);
+          return false;
+      }
+  };
+
+  const handleLogin = async (u: string, p: string): Promise<boolean> => {
+      try {
+          await signInWithEmailAndPassword(auth, u, p);
+          // Data loading is handled by onAuthStateChanged listener
+          return true;
+      } catch (error: any) {
+          console.error("Login failed:", error);
+          alert(`登录失败: ${error.message}`);
+          return false;
+      }
+  };
+
+  const handleLogout = async () => {
+      try {
+          await signOut(auth);
+          // Reset to default guest state
+          setCurrentUser(null);
+          setPlayerGold(STARTING_GOLD);
+          setDiamonds(STARTING_DIAMONDS);
+          setPlayerHistory({ totalWins: 0, totalGoldEarned: 0, maxFanWin: 0, maxFanHand: null, suggestions: [] });
+          setGameSettings({
+            baseFanValue: BASE_FAN_VALUE, playerInitialGold: STARTING_GOLD, botDifficulty: BotDifficulty.HARD,
+            playerInitialDiamonds: STARTING_DIAMONDS, diamondRewardPerGame: DIAMOND_REWARD_PER_GAME,
+            botNames: { right: '小熊维尼', top: '哈基米', left: '拉布布' },
+            volume: 50,
+            autoAIAnalysis: false // 默认关闭
+          });
+          setCurrentView('home');
+      } catch (error) {
+          console.error("Logout error", error);
+      }
   };
   
-  // 更新当前用户的昵称或密码
-  const handleUpdateProfile = (nickname: string, password?: string) => {
-      if (!currentUser) return;
-      const updatedUser = { ...currentUser, nickname, ...(password ? { password } : {}) };
-      setCurrentUser(updatedUser);
-      setUsers(prev => ({ ...prev, [currentUser.username]: updatedUser }));
-      
-      // 如果正在游戏中，实时更新局内玩家名称
+  const handleUpdateProfile = async (nickname: string, password?: string) => {
+      if (!firebaseUser) return;
+      const updatedUser = { ...currentUser!, nickname };
+      setCurrentUser(updatedUser); 
+      try {
+        await updateDoc(doc(db, "users", firebaseUser.uid), { nickname });
+      } catch (e) {
+          console.error("Profile update failed", e);
+          alert("更新失败，请重试");
+      }
       if (gameState) {
           setGameState(prev => {
               if (!prev) return null;
@@ -396,7 +443,7 @@ const App: React.FC = () => {
     setRoundHuResult(null);
     setDamagedPlayers({});
     setActiveSkillState(null);
-    setWinningHints([]); // 重置听牌提示
+    setWinningHints([]); 
     setCurrentView('game');
 
     if (currentDealerId !== 0) setTimeout(() => performBotDiscard(currentDealerId), 1500);
@@ -424,7 +471,6 @@ const App: React.FC = () => {
     if (currentView === 'game' && !gameState) initGame(); 
   }, [currentView, gameState, initGame]);
   
-  // 滚动逻辑优化：只滚动日志容器
   useEffect(() => { 
       if (logContainerRef.current) {
           logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
@@ -438,7 +484,6 @@ const App: React.FC = () => {
     setTileCounts(calculateTileCounts(allDiscards, allMelds, gameState.players[0].hand));
   }, [gameState]);
 
-  // 听牌提示 Effect: 监听手牌、TileCounts 和当前轮次变化
   useEffect(() => {
       if (!gameState || gameState.isGameOver) {
           setWinningHints([]);
@@ -447,12 +492,18 @@ const App: React.FC = () => {
       
       const myHand = gameState.players[0].hand;
       const myMelds = gameState.players[0].melds;
+      const totalTiles = myHand.length + myMelds.length * 3;
 
-      // 仅当手牌张数为 4, 7, 10, 13 (即模 3 余 1) 时检测听牌
-      // 这意味着玩家打出牌后，或吃碰后打出牌，处于等待进张的状态
-      if ((myHand.length + myMelds.length * 3) % 3 === 1) {
+      let tilesToCheck: Tile[] | null = null;
+      if (totalTiles % 3 === 1) {
+          tilesToCheck = myHand;
+      } else if (totalTiles % 3 === 2 && myHand.length > 0) {
+          tilesToCheck = myHand.slice(0, -1);
+      }
+
+      if (tilesToCheck) {
           const hints = calculateWinningTiles(
-              myHand, 
+              tilesToCheck, 
               myMelds, 
               tileCounts, 
               gameState.roundWind, 
@@ -484,22 +535,56 @@ const App: React.FC = () => {
     setSelfActionOptions(options);
   }, []);
 
+  // 触发 AI 分析的函数 (支持手动和自动)
+  const triggerAIAnalysis = async () => {
+    if (!gameState) return;
+    
+    // 如果已经有正在进行的请求，先中断它 (防抖)
+    if (aiAbortControllerRef.current) {
+        aiAbortControllerRef.current.abort();
+    }
+    // 创建新的 Controller
+    aiAbortControllerRef.current = new AbortController();
+
+    setIsAnalyzing(true);
+    
+    // 收集场上所有弃牌和副露用于 Prompt
+    const allDiscards = gameState.players.flatMap(p => p.discards);
+    const allMelds = gameState.players.flatMap(p => p.melds.flatMap(m => m.tiles));
+
+    try {
+        const analysis = await getMahjongStrategy(
+            gameState.players[0].hand, 
+            allDiscards, 
+            allMelds, 
+            gameState.roundWind, 
+            gameState.players[0].seatWind,
+            aiAbortControllerRef.current.signal // 传递 signal
+        );
+        setAiAnalysis(analysis);
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+             // 请求被取消，无需处理 UI 错误，也无需记录日志干扰
+        } else {
+             console.error("AI Analysis failed", error);
+             setGameLog(prev => [...prev, "[系统] AI 连接超时，请稍后重试"]);
+        }
+    } finally {
+        setIsAnalyzing(false);
+    }
+  };
+
   useEffect(() => {
     if (gameState?.currentPlayerIndex === 0 && !gameState.waitingForUserAction && gameState.players[0].hand.length % 3 === 2 && !gameState.isGameOver) {
-      triggerAIAnalysis();
+      // 检查是否开启了自动分析
+      if (gameSettings.autoAIAnalysis) {
+          triggerAIAnalysis();
+      }
       checkForSelfActions(gameState.players[0]);
     } else if (selfActionOptions.length > 0) {
       setSelfActionOptions([]);
     }
-  }, [gameState, checkForSelfActions, selfActionOptions.length]);
-
-  const triggerAIAnalysis = async () => {
-    if (!gameState) return;
-    setIsAnalyzing(true);
-    const analysis = getLocalMahjongStrategy(gameState.players[0].hand, [], [], gameState.roundWind, gameState.players[0].seatWind);
-    setAiAnalysis(analysis);
-    setIsAnalyzing(false);
-  };
+  }, [gameState, checkForSelfActions, selfActionOptions.length, gameSettings.autoAIAnalysis]);
 
   const settleRound = useCallback((huResult: HuResult, winningPlayerId: number | null, winType: 'ron' | 'tsumo' | null, discarderId: number | null, finalPlayers: Player[]) => {
     if (!gameState) return;
@@ -541,16 +626,12 @@ const App: React.FC = () => {
 
     // --- 结算音效触发逻辑 ---
     if (winningPlayerId === null) {
-        // 流局
         audioService.playDrawGame();
     } else if (player0Change > 0) {
-        // 玩家赢钱
         audioService.playVictory();
     } else if (player0Change < 0) {
-        // 玩家输钱
         audioService.playDefeat();
     } else {
-        // 玩家无输赢 (不输不赢)
         audioService.playNeutral();
     }
 
@@ -585,8 +666,7 @@ const App: React.FC = () => {
   }, [gameState, gameSettings.baseFanValue, gameSettings.diamondRewardPerGame]);
 
   const handleGameEnd = (winnerId: number | null, winType: 'ron' | 'tsumo' | null, finalWinningTile: Tile | null, discarderId: number | null = null, isGangShangKaiHua: boolean = false) => {
-    // 移除之前的 generic playWin 调用，改在 settleRound 中根据具体结果播放详细音效
-
+    
     setGameState(prev => {
         if (!prev) return null;
         
@@ -612,7 +692,6 @@ const App: React.FC = () => {
   };
 
   const handleDraw = (playerIndex: number) => {
-    // audioService.playDraw(); // Removed draw sound
     setGameState(prev => {
       if (!prev || prev.isGameOver) return prev;
       const deck = [...prev.wall];
@@ -627,6 +706,14 @@ const App: React.FC = () => {
 
   const handleDiscard = (index: number) => {
     if (!gameState) return;
+    
+    // 关键改动：玩家出牌时，立即中止任何正在进行的 AI 分析
+    if (aiAbortControllerRef.current) {
+        aiAbortControllerRef.current.abort();
+    }
+    // 并将 analyzing 状态设为 false，以防 UI 卡在 loading
+    setIsAnalyzing(false);
+
     audioService.playDiscard();
     const newPlayers = [...gameState.players];
     const tile = newPlayers[0].hand.splice(index, 1)[0];
@@ -1063,6 +1150,8 @@ const App: React.FC = () => {
                           size="lg" 
                           selected={selectedTileIndex === i} 
                           highlight={tile.symbol === aiAnalysis?.recommendedDiscard} 
+                          // 传递风险分数
+                          riskScore={aiAnalysis?.dangerAssessment?.find(d => d.tile === tile.symbol)?.score}
                           onClick={() => gameState.currentPlayerIndex === 0 && !gameState.waitingForUserAction ? setSelectedTileIndex(i) : null} 
                           className={`cursor-pointer hover:-translate-y-4 transition-transform shadow-2xl ${
                             (i === gameState.players[0].hand.length - 1 && gameState.players[0].hand.length % 3 === 2) ? 'ml-6' : ''

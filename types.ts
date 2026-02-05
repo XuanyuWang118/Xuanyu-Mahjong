@@ -95,6 +95,7 @@ export interface GameSettings {
   backgroundImageUrl?: string; // 新增：自定义背景
   botNames: { top: string; left: string; right: string }; // 新增：自定义机器人名称
   volume: number; // 新增：音量 (0-100)
+  autoAIAnalysis: boolean; // 新增：是否自动进行AI分析
 }
 
 export interface PlayerHistory {
@@ -133,7 +134,7 @@ export interface SkillVisualEffect {
 // --- 新增账户系统类型 ---
 export interface UserProfile {
   username: string;
-  password: string; // 简单明文存储演示用
+  // password: string; // Removed: Handled by Firebase Auth
   gold: number;
   diamonds: number;
   history: PlayerHistory;

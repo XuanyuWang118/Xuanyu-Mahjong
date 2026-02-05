@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Tile } from '../types';
 
@@ -10,6 +11,7 @@ interface MahjongTileProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
   isHorizontal?: boolean; // For discard pile or side players
+  riskScore?: number; // 新增：风险评分 (0-100)
 }
 
 const MahjongTile: React.FC<MahjongTileProps> = ({ 
@@ -20,7 +22,8 @@ const MahjongTile: React.FC<MahjongTileProps> = ({
   hidden, 
   size = 'md',
   className = '',
-  isHorizontal = false
+  isHorizontal = false,
+  riskScore
 }) => {
   
   const sizeClasses = {
@@ -60,10 +63,18 @@ const MahjongTile: React.FC<MahjongTileProps> = ({
          ) : (
              <span className="scale-125">{symbol}</span>
          )}
-         {/* Small number indicator for accessibility/clarity - removed as symbol now includes number */}
       </div>
     );
   };
+
+  // 风险颜色计算
+  const getRiskColor = (score: number) => {
+      if (score >= 70) return 'bg-red-600 shadow-[0_0_6px_rgba(220,38,38,0.8)]'; // High risk
+      if (score >= 35) return 'bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.8)]'; // Medium risk
+      return 'bg-green-500/50'; // Low risk
+  };
+
+  const riskClass = riskScore !== undefined ? getRiskColor(riskScore) : null;
 
   return (
     <div 
@@ -82,14 +93,22 @@ const MahjongTile: React.FC<MahjongTileProps> = ({
         boxShadow: selected ? undefined : '2px 4px 6px rgba(0,0,0,0.3), inset 0 0 10px rgba(0,0,10,0.05)'
       }}
     >
+      {/* 风险指示线 (仅在非隐藏且非横向展示时显示) */}
+      {riskClass && !hidden && !isHorizontal && riskScore !== undefined && riskScore > 10 && (
+          <div 
+            className={`absolute -top-1.5 left-1 right-1 h-1 rounded-full ${riskClass} z-20`} 
+            title={`危险度: ${riskScore}`} 
+          />
+      )}
+
       {/* 3D Depth Effect at bottom */}
       {!isHorizontal && <div className="absolute bottom-0 w-full h-[12%] bg-[#E6DCC3] rounded-b opacity-80 pointer-events-none" />}
       
       {getTileContent()}
       
       {highlight && (
-        <div className="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] px-1 rounded-full animate-bounce">
-          推荐
+        <div className="absolute -top-3 -right-3 bg-green-600 border border-white text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-bounce shadow-lg z-30 uppercase tracking-tighter">
+          BEST
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { GameSettings, BotDifficulty, UserProfile } from '../types';
-import { X, Save, Diamond, BrainCircuit, Settings, Zap, Image as ImageIcon, Users, UserCog, Volume2 } from 'lucide-react';
+import { X, Save, Diamond, BrainCircuit, Settings, Zap, Image as ImageIcon, Users, UserCog, Volume2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface GameSettingsModalProps {
   settings: GameSettings;
@@ -93,6 +93,25 @@ const GameSettingsModal: React.FC<GameSettingsModalProps> = ({
                             </button>
                         ))}
                     </div>
+                </div>
+
+                {/* 自动 AI 分析开关 */}
+                <div className="bg-purple-900/10 p-3 rounded-2xl border border-purple-500/20">
+                     <div className="flex justify-between items-center">
+                         <div className="flex items-center gap-2 text-purple-400 text-xs font-black uppercase tracking-[0.1em]">
+                             <BrainCircuit size={16} /> 自动 AI 分析
+                         </div>
+                         <button 
+                            onClick={() => setLocalSettings(s => ({...s, autoAIAnalysis: !s.autoAIAnalysis}))}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors ${localSettings.autoAIAnalysis ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'}`}
+                         >
+                             {localSettings.autoAIAnalysis ? <ToggleRight /> : <ToggleLeft />}
+                             <span className="text-xs font-bold">{localSettings.autoAIAnalysis ? '开启' : '关闭'}</span>
+                         </button>
+                     </div>
+                     <p className="text-[10px] text-gray-500 mt-2">
+                         {localSettings.autoAIAnalysis ? 'AI 将在每回合自动为您分析最佳出牌策略。' : 'AI 仅在您点击“大师指点”时进行分析 (节省 Token)。'}
+                     </p>
                 </div>
 
                 <div className="bg-cyan-900/10 p-4 rounded-2xl border border-cyan-500/20 shadow-inner space-y-3">
