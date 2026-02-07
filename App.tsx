@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { generateDeck, INITIAL_HAND_SIZE, STARTING_GOLD, BASE_FAN_VALUE, ROUND_WINDS, STARTING_DIAMONDS, DIAMOND_REWARD_PER_GAME } from './constants';
 import { Player, GameState, Tile, AIAnalysisResult, ActionOptions, Meld, HuResult, BotDifficulty, GameSettings, PlayerHistory, ActiveSkillState, SkillVisualEffect, Skill, UserProfile, WinningTileHint } from './types';
-import { shuffleDeck, sortHand, checkCanPong, checkCanKong, checkCanChow, checkCanHu, calculateTileCounts, getBotDiscard, shouldBotMeld, calculateHandFans, calculateWinningTiles } from './utils';
+import { shuffleDeck, sortHand, checkCanPong, checkCanKong, checkCanChow, checkCanHu, calculateTileCounts, getBotDiscard, shouldBotMeld, calculateHandFans, calculateWinningTiles, getTileAudioFilename } from './utils';
 // 引入新的 AI 服务 (已更名为 deepseekService)
 import { getMahjongStrategy } from './services/deepseekService';
 import MahjongTile from './components/MahjongTile';
@@ -627,6 +627,7 @@ const App: React.FC = () => {
     // --- 结算音效触发逻辑 ---
     if (winningPlayerId === null) {
         audioService.playDrawGame();
+        // audioService.playVoice('act_liuju'); // Moved to handleGameEnd for better timing
     } else if (player0Change > 0) {
         audioService.playVictory();
     } else if (player0Change < 0) {
@@ -666,7 +667,19 @@ const App: React.FC = () => {
   }, [gameState, gameSettings.baseFanValue, gameSettings.diamondRewardPerGame]);
 
   const handleGameEnd = (winnerId: number | null, winType: 'ron' | 'tsumo' | null, finalWinningTile: Tile | null, discarderId: number | null = null, isGangShangKaiHua: boolean = false) => {
-    
+    // 播放游戏结束相关的互动语音
+    if (winnerId !== null) {
+        if (isGangShangKaiHua) {
+             audioService.playVoice('act_gangshangkaihua');
+        } else if (winType === 'tsumo') {
+             audioService.playVoice('act_zimo');
+        } else {
+             audioService.playVoice('act_hu');
+        }
+    } else {
+        audioService.playVoice('act_liuju');
+    }
+
     setGameState(prev => {
         if (!prev) return null;
         
@@ -715,8 +728,13 @@ const App: React.FC = () => {
     setIsAnalyzing(false);
 
     audioService.playDiscard();
+    
     const newPlayers = [...gameState.players];
     const tile = newPlayers[0].hand.splice(index, 1)[0];
+    
+    // 播放出牌语音 (延迟 300ms)
+    setTimeout(() => audioService.playVoice(getTileAudioFilename(tile)), 300);
+
     newPlayers[0].hand = sortHand(newPlayers[0].hand);
     newPlayers[0].discards.push(tile);
     setGameLog(prev => [...prev, `${newPlayers[0].name} 打出 ${tile.symbol}`]);
@@ -734,6 +752,10 @@ const App: React.FC = () => {
       const discard = getBotDiscard(bot.hand, current.roundWind, bot.seatWind, gameSettings.botDifficulty);
       const idx = bot.hand.findIndex(t => t.id === discard.id);
       const [tile] = bot.hand.splice(idx > -1 ? idx : 0, 1);
+      
+      // 播放出牌语音 (延迟 300ms)
+      setTimeout(() => audioService.playVoice(getTileAudioFilename(tile)), 300);
+
       bot.discards.push(tile);
       bot.hand = sortHand(bot.hand);
       setGameLog(prev => [...prev, `${bot.name} 打出 ${tile.symbol}`]);
@@ -787,6 +809,11 @@ const App: React.FC = () => {
 
   const performBotMeld = (botIdx: number, type: 'pong' | 'chow' | 'kong', discard: Tile, fromIdx: number, chowTiles?: Tile[]) => {
     audioService.playMeld();
+    
+    // 播放机器人吃碰杠语音
+    const soundName = type === 'pong' ? 'act_peng' : type === 'kong' ? 'act_gang' : 'act_chi';
+    audioService.playVoice(soundName);
+
     setGameState(prev => {
         if (!prev) return null;
         const players = prev.players.map(p => ({ ...p }));
@@ -817,6 +844,16 @@ const App: React.FC = () => {
     audioService.playMeld();
     const playerName = gameState.players[0].name;
     triggerInteractionEffect(type === 'angang' ? '杠' : type === 'pong' ? '碰' : type === 'kong' ? '杠' : '吃', playerName, 'bottom');
+    
+    // 播放用户吃碰杠语音
+    if (type === 'angang' || type === 'kong') {
+        audioService.playVoice('act_gang');
+    } else if (type === 'pong') {
+        audioService.playVoice('act_peng');
+    } else if (type === 'chow') {
+        audioService.playVoice('act_chi');
+    }
+
     setGameState(prev => {
         if (!prev) return null;
         setGameLog(prevLogs => [...prevLogs, `${prev.players[0].name} ${type === 'angang' ? '暗杠' : type === 'pong' ? '碰' : type === 'kong' ? '杠' : '吃'}`]);
@@ -844,6 +881,10 @@ const App: React.FC = () => {
   const performUserKakan = (tile: Tile, meldIndex: number) => {
     if (!gameState) return;
     audioService.playMeld();
+    
+    // 播放加杠语音
+    audioService.playVoice('act_gang');
+
     const playerName = gameState.players[0].name;
     triggerInteractionEffect('杠', playerName, 'bottom');
     setGameState(prev => {

@@ -53,6 +53,26 @@ const getSuitSymbolSuffix = (suit: Suit): string => {
   return ''; 
 };
 
+// 获取牌对应的音频文件名
+export const getTileAudioFilename = (tile: Tile): string => {
+  if (tile.suit === 'man') return `m${tile.value}`;
+  if (tile.suit === 'pin') return `p${tile.value}`;
+  if (tile.suit === 'sou') {
+    // 特殊处理：幺鸡
+    if (tile.value === 1) return 's1_yaoji';
+    return `s${tile.value}`;
+  }
+  if (tile.suit === 'wind') {
+    const map: Record<string, string> = { 'E': 'z1_dong', 'S': 'z2_nan', 'W': 'z3_xi', 'N': 'z4_bei' };
+    return map[tile.value as string] || '';
+  }
+  if (tile.suit === 'dragon') {
+    const map: Record<string, string> = { 'Red': 'z5_zhong', 'Green': 'z6_fa', 'White': 'z7_bai' };
+    return map[tile.value as string] || '';
+  }
+  return '';
+};
+
 export const calculateTileCounts = (allDiscards: Tile[], allMelds: Tile[], myHand: Tile[]): Record<string, number> => {
   const counts: Record<string, number> = {};
   SUITS.forEach(suit => {
