@@ -1,9 +1,11 @@
 
+
 class SoundManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private volume: number = 0.5;
   private isMuted: boolean = false;
+  private voiceCache: Map<string, AudioBuffer> = new Map();
 
   constructor() {
     try {
@@ -41,6 +43,37 @@ class SoundManager {
       data[i] = Math.random() * 2 - 1;
     }
     return buffer;
+  }
+
+  // 播放语音文件
+  public async playVoice(filename: string) {
+    if (!this.ctx || !this.masterGain) return;
+    this.resume();
+
+    // 检查缓存
+    let buffer = this.voiceCache.get(filename);
+
+    if (!buffer) {
+        try {
+            // 假设音频文件位于 public/audios/ 目录下
+            const response = await fetch(`/audios/${filename}.mp3`);
+            if (!response.ok) {
+                console.warn(`Audio file not found: ${filename}`);
+                return;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            buffer = await this.ctx.decodeAudioData(arrayBuffer);
+            this.voiceCache.set(filename, buffer);
+        } catch (e) {
+            console.error(`Failed to load voice: ${filename}`, e);
+            return;
+        }
+    }
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.masterGain);
+    source.start();
   }
 
   // 麻将牌撞击声 (Click/Clack)
